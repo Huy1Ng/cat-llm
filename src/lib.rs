@@ -89,119 +89,135 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    /// Helper function to populate the test directory structure
-    fn setup_test_env() -> tempfile::TempDir {
+    #[test]
+    fn test_ignore_mechanisms() {
         let dir = tempdir().unwrap();
-        let base = dir.path();
+        let base = dir.path().canonicalize().unwrap();
 
-        // Root files
-        fs::write(base.join(".gitignore"), "*.log\nbuild/").unwrap();
-        fs::write(base.join(".llmignore"), "secret.txt").unwrap();
+        // Setup various files to test all ignore mechanisms in one go
+        fs::write(base.join(".gitignore"), "*.log\n").unwrap();
+        fs::write(base.join(".llmignore"), "secret.txt\n").unwrap();
         fs::write(base.join("main.rs"), "fn main() {}").unwrap();
         fs::write(base.join("empty.txt"), "").unwrap();
         fs::write(base.join("app.log"), "log data").unwrap();
         fs::write(base.join("secret.txt"), "secret").unwrap();
         fs::write(base.join("uv.lock"), "lock").unwrap();
 
-        // Subdir files
-        let subdir = base.join("subdir");
-        fs::create_dir(&subdir).unwrap();
-        fs::write(subdir.join(".llmignore"), "local_ignore.txt").unwrap();
-        fs::write(subdir.join("helper.rs"), "fn help() {}").unwrap();
-        fs::write(subdir.join("local_ignore.txt"), "ignored").unwrap();
-        fs::write(subdir.join("poetry.lock"), "lock").unwrap();
-
-        dir // Return the TempDir so it stays alive for the duration of the test
-    }
-
-    #[test]
-    fn test_default_behavior_respects_gitignore() {
-        let dir = setup_test_env();
-        let args = Args {
-            paths: vec![dir.path().to_path_buf()],
-            ..Default::default()
-        };
-
-        let mut output = Vec::new();
-        run(&args, &mut output).unwrap();
-        let out_str = String::from_utf8(output).unwrap();
-
-        assert!(out_str.contains("main.rs"));
-        assert!(out_str.contains("secret.txt")); // Not ignored yet
-        assert!(!out_str.contains("app.log")); // .gitignore worked
-    }
-
-    #[test]
-    fn test_custom_ignore_files() {
-        let dir = setup_test_env();
         let args = Args {
             ignore_files: vec![".llmignore".to_string()],
-            paths: vec![dir.path().to_path_buf()],
-            ..Default::default()
+            ignore_patterns: vec!["*.lock".to_string()],
+            paths: vec![base.clone()],
         };
 
         let mut output = Vec::new();
         run(&args, &mut output).unwrap();
         let out_str = String::from_utf8(output).unwrap();
 
-        assert!(out_str.contains("main.rs"));
-        assert!(!out_str.contains("secret.txt")); // Root .llmignore worked
-        assert!(!out_str.contains("local_ignore.txt")); // Subdir .llmignore worked
+        // Assertions
+        assert!(out_str.contains("main.rs"), "Standard files should be read");
+        assert!(
+            !out_str.contains("app.log"),
+            ".gitignore should successfully exclude *.log"
+        );
+        assert!(
+            !out_str.contains("secret.txt"),
+            ".llmignore should successfully exclude secret.txt"
+        );
+        assert!(
+            !out_str.contains("uv.lock"),
+            "CLI pattern should successfully exclude *.lock"
+        );
+        assert!(
+            out_str.contains("empty.txt\n```\n \n```"),
+            "Empty files should contain a single space inside code fences"
+        );
     }
 
     #[test]
-    fn test_custom_ignore_patterns() {
-        let dir = setup_test_env();
-        let args = Args {
-            ignore_files: vec![".llmignore".to_string()],
-            ignore_patterns: vec!["uv.lock".to_string(), "poetry.lock".to_string()],
-            paths: vec![dir.path().to_path_buf()],
-        };
-
-        let mut output = Vec::new();
-        run(&args, &mut output).unwrap();
-        let out_str = String::from_utf8(output).unwrap();
-
-        assert!(out_str.contains("main.rs"));
-        assert!(out_str.contains("helper.rs"));
-        assert!(!out_str.contains("uv.lock")); // Pattern worked
-        assert!(!out_str.contains("poetry.lock")); // Pattern worked
-    }
-
-    #[test]
-    fn test_empty_file_formatting() {
-        let dir = setup_test_env();
-        let args = Args {
-            paths: vec![dir.path().join("empty.txt")],
-            ..Default::default()
-        };
-
-        let mut output = Vec::new();
-        run(&args, &mut output).unwrap();
-        let out_str = String::from_utf8(output).unwrap();
-
-        // Ensure it contains a blank space inside the fences for empty files
-        assert!(out_str.contains("empty.txt\n```\n \n```"));
-    }
-
-    #[test]
-    fn test_child_ignore_does_not_leak_to_parent() {
-        use tempfile::tempdir;
+    fn test_hierarchical_isolation() {
         let dir = tempdir().unwrap();
         let base = dir.path().canonicalize().unwrap();
 
-        // 1. Create a file in the parent directory
-        fs::write(base.join("leak_test.txt"), "parent content").unwrap();
+        // 1. Root ignores file1.txt
+        fs::write(base.join(".customignore"), "file1.txt\n").unwrap();
+        fs::write(base.join("file1.txt"), "root").unwrap();
+        fs::write(base.join("file2.txt"), "root").unwrap();
 
-        // 2. Create a child directory
-        let subdir = base.join("child");
-        fs::create_dir(&subdir).unwrap();
+        // 2. Sub1 ignores file2.txt
+        let sub1 = base.join("sub1");
+        fs::create_dir(&sub1).unwrap();
+        fs::write(sub1.join(".customignore"), "file2.txt\n").unwrap();
+        fs::write(sub1.join("file1.txt"), "sub1").unwrap();
+        fs::write(sub1.join("file2.txt"), "sub1").unwrap();
+        fs::write(sub1.join("file3.txt"), "sub1").unwrap();
 
-        // 3. Create a .gitignore in the CHILD directory that ignores "leak_test.txt"
-        fs::write(subdir.join(".gitignore"), "leak_test.txt").unwrap();
+        // 3. Sub2 ignores file3.txt
+        let sub2 = base.join("sub2");
+        fs::create_dir(&sub2).unwrap();
+        fs::write(sub2.join(".customignore"), "file3.txt\n").unwrap();
+        fs::write(sub2.join("file2.txt"), "sub2").unwrap();
+        fs::write(sub2.join("file3.txt"), "sub2").unwrap();
 
-        // 4. Create a file with the same name in the child directory
-        fs::write(subdir.join("leak_test.txt"), "child content").unwrap();
+        let args = Args {
+            ignore_files: vec![".customignore".to_string()],
+            paths: vec![base.clone()],
+            ..Default::default()
+        };
+
+        let mut output = Vec::new();
+        run(&args, &mut output).unwrap();
+        let out_str = String::from_utf8(output).unwrap();
+
+        let root_f1 = base.join("file1.txt").display().to_string();
+        let root_f2 = base.join("file2.txt").display().to_string();
+        let sub1_f1 = sub1.join("file1.txt").display().to_string();
+        let sub1_f2 = sub1.join("file2.txt").display().to_string();
+        let sub1_f3 = sub1.join("file3.txt").display().to_string();
+        let sub2_f2 = sub2.join("file2.txt").display().to_string();
+        let sub2_f3 = sub2.join("file3.txt").display().to_string();
+
+        // Root Asserts
+        assert!(
+            !out_str.contains(&root_f1),
+            "Root file1 ignored by root rule"
+        );
+        assert!(
+            out_str.contains(&root_f2),
+            "Root file2 NOT ignored by root rule"
+        );
+
+        // Sub1 Asserts
+        assert!(
+            !out_str.contains(&sub1_f1),
+            "Sub1 file1 ignored by inherited root rule"
+        );
+        assert!(
+            !out_str.contains(&sub1_f2),
+            "Sub1 file2 ignored by its own local rule"
+        );
+        assert!(out_str.contains(&sub1_f3), "Sub1 file3 NOT ignored");
+
+        // Sub2 Asserts (Testing Sibling Isolation)
+        assert!(
+            out_str.contains(&sub2_f2),
+            "Sub2 file2 NOT ignored (sibling sub1 rules must not leak)"
+        );
+        assert!(
+            !out_str.contains(&sub2_f3),
+            "Sub2 file3 ignored by its own local rule"
+        );
+    }
+
+    #[test]
+    fn test_negation_rules_mixing() {
+        let dir = tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+
+        // Ignore all logs EXCEPT important.log
+        fs::write(base.join(".gitignore"), "*.log\n!important.log\n").unwrap();
+        fs::write(base.join("app.log"), "ignore me").unwrap();
+        fs::write(base.join("important.log"), "keep me").unwrap();
+        fs::write(base.join("main.rs"), "code").unwrap();
 
         let args = Args {
             paths: vec![base.clone()],
@@ -212,26 +228,22 @@ mod tests {
         run(&args, &mut output).unwrap();
         let out_str = String::from_utf8(output).unwrap();
 
-        // Format the expected paths to match how they will be printed by the tool
-        let parent_file_path = base.join("leak_test.txt").display().to_string();
-        let child_file_path = subdir.join("leak_test.txt").display().to_string();
-
-        // The parent file MUST be present (child ignore should not leak up)
         assert!(
-            out_str.contains(&parent_file_path),
-            "Parent file was incorrectly ignored by child .gitignore!"
+            out_str.contains("main.rs"),
+            "Standard files should be included"
         );
-
-        // The child file MUST NOT be present (child ignore should apply to its own directory)
         assert!(
-            !out_str.contains(&child_file_path),
-            "Child file was not correctly ignored by its own .gitignore!"
+            !out_str.contains("app.log"),
+            "Regular .log should be ignored by *.log"
+        );
+        assert!(
+            out_str.contains("important.log"),
+            "Negation rule (!important.log) should override and include the file"
         );
     }
 
     #[test]
     fn test_clap_multiple_args_parsing() {
-        // Simulate command line input using comma delimiters
         let cli_input = vec![
             "cat-llm",
             "--ignore-files",
@@ -242,55 +254,13 @@ mod tests {
             "tests",
         ];
 
-        // Parse the simulated input
         let args = Args::try_parse_from(cli_input).expect("Failed to parse CLI arguments");
 
-        // Verify vectors captured multiple items properly
         assert_eq!(args.ignore_files, vec![".llmignore", ".custom_ignore"]);
         assert_eq!(args.ignore_patterns, vec!["*.lock", "*.log"]);
-
-        // Verify positional paths were cleanly separated
         assert_eq!(
             args.paths,
             vec![PathBuf::from("src"), PathBuf::from("tests")]
         );
-    }
-
-    #[test]
-    fn test_ignore_patterns_with_wildcard_globs() {
-        use tempfile::tempdir;
-        let dir = tempdir().unwrap();
-        let base = dir.path().canonicalize().unwrap();
-
-        // 1. Create a mix of target files and files to ignore in the root
-        fs::write(base.join("Cargo.lock"), "lock data").unwrap();
-        fs::write(base.join("uv.lock"), "lock data").unwrap();
-        fs::write(base.join("main.rs"), "rust code").unwrap();
-
-        // 2. Create a subdirectory with more files
-        let subdir = base.join("subdir");
-        fs::create_dir(&subdir).unwrap();
-        fs::write(subdir.join("poetry.lock"), "lock data").unwrap();
-        fs::write(subdir.join("lib.rs"), "rust code").unwrap();
-
-        // 3. Pass the wildcard string exactly as if the user quoted it in bash
-        let args = Args {
-            ignore_patterns: vec!["*.lock".to_string()],
-            paths: vec![base.clone()],
-            ..Default::default()
-        };
-
-        let mut output = Vec::new();
-        run(&args, &mut output).unwrap();
-        let out_str = String::from_utf8(output).unwrap();
-
-        // The valid code files should be present
-        assert!(out_str.contains("main.rs"));
-        assert!(out_str.contains("lib.rs"));
-
-        // ALL .lock files must be gone, proving the wildcard evaluation works
-        assert!(!out_str.contains("Cargo.lock"));
-        assert!(!out_str.contains("uv.lock"));
-        assert!(!out_str.contains("poetry.lock"));
     }
 }
