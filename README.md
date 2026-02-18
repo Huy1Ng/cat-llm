@@ -19,7 +19,7 @@ You can install `cat-llm` natively via Rust's `cargo`, or as a standalone tool v
 cargo install --path .
 
 # Or directly from GitHub repository
-cargo install --git [https://github.com/Huy1Ng/cat-llm](https://github.com/Huy1Ng/cat-llm)
+cargo install --git https://github.com/Huy1Ng/cat-llm
 ```
 
 ### Via UV (Python)
@@ -28,7 +28,7 @@ cargo install --git [https://github.com/Huy1Ng/cat-llm](https://github.com/Huy1N
 uv tool install .
 
 # Or directly from GitHub repository
-uv tool install git+[https://github.com/Huy1Ng/cat-llm](https://github.com/Huy1Ng/cat-llm)
+uv tool install git+https://github.com/Huy1Ng/cat-llm
 ```
 
 ## Usage Workflows
