@@ -14,51 +14,60 @@ A fast, lightweight Rust CLI tool to concatenate files for Large Language Model 
 You can install `cat-llm` natively via Rust's `cargo`, or as a standalone tool via Python's `uv`.
 
 ### Via Cargo (Rust)
-```bash
+````bash
 # From local source
 cargo install --path .
 
 # Or directly from GitHub repository
 cargo install --git https://github.com/Huy1Ng/cat-llm
-```
+````
 
 ### Via UV (Python)
-```bash
+````bash
 # From local source
 uv tool install .
 
 # Or directly from GitHub repository
 uv tool install git+https://github.com/Huy1Ng/cat-llm
-```
+````
 
 ## Usage Workflows
 
 By default, `cat-llm` processes the current directory, formatting each valid file into a clear Markdown code block.
 
 ### 1. Snapshot an Entire Repository
-Gather context for your entire codebase. You can pass multiple ignore files or patterns using a **comma-separated list**.
+
+Gather context for your entire codebase. Repeat `--ignore-file` for each additional ignore filename, and `--ignore-pattern` for each glob pattern to exclude.
+
 *(Note: Always wrap wildcard patterns in quotes so your shell doesn't expand them first!)*
-```bash
-cat-llm --ignore-files .llmignore,.custom_ignore --ignore-patterns '*.lock,*.log' . > context.txt
-```
-*(Alternatively, you can repeat the flags: `--ignore-patterns '*.lock' --ignore-patterns '*.log'`)*
+````bash
+cat-llm --ignore-file .llmignore --ignore-file .custom_ignore --ignore-pattern '*.lock' --ignore-pattern '*.log' . > context.txt
+````
 
 ### 2. Pass Specific Files
-You don't have to scan whole directories; you can provide exact file paths:
-```bash
-cat-llm src/main.rs src/lib.rs > context.txt
-```
 
-### 3. The Git Diff Workflow (Changes Only)
+You don't have to scan whole directories; you can provide exact file paths:
+````bash
+cat-llm src/main.rs src/lib.rs > context.txt
+````
+
+### 3. List Files Only (No Content)
+
+Use `--path-only` to print matched file paths without their contents — useful for previewing what `cat-llm` would include before committing to a full run:
+````bash
+cat-llm --path-only .
+````
+
+### 4. The Git Diff Workflow (Changes Only)
+
 If you only want the LLM to review the files you are currently working on, you can pipe `git diff` directly into `cat-llm` using `xargs`:
-```bash
+````bash
 git diff --name-only --diff-filter=d HEAD | xargs -r cat-llm > changes.txt
-```
+````
 
 ## Output Format
 
 For every included file, the tool outputs the file path followed by its contents enclosed in standard code fences:
-
 ````text
 /path/to/src/main.rs
 ```
@@ -69,7 +78,13 @@ fn main() {
 
 /path/to/empty_file.txt
 ```
-
 ```
 ````
-*(Note: Completely empty files will contain a single blank space inside the fences to maintain valid formatting).*
+
+*(Note: Completely empty files will contain a single blank space inside the fences to maintain valid formatting.)*
+
+With `--path-only`, only the paths are printed, one per line:
+````text
+/path/to/src/main.rs
+/path/to/empty_file.txt
+````

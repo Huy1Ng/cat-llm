@@ -1,11 +1,11 @@
 [package]
 name = "cat-llm"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 description = "A fast, lightweight Rust CLI tool to concatenate files for LLM context windows."
 authors = ["Huy Nguyen <huy.nguyen7994@gmail.com>"]
 readme = "README.md"
-license = "MIT" # (Or "Apache-2.0", etc.)
+license = "MIT"
 repository = "https://github.com/Huy1Ng/cat-llm"
 
 [dependencies]
