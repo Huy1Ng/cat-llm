@@ -16,7 +16,7 @@ pub struct Args {
     #[arg(long, value_name = "PATTERN")]
     pub ignore_pattern: Vec<String>,
 
-    #[arg(long, default_value_t = false)]
+    #[arg(long)]
     pub path_only: bool,
 
     #[arg(name = "PATHS", default_value = ".")]
