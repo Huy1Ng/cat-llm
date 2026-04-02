@@ -31,13 +31,42 @@ jobs:
         run: cargo test
 
   python-build:
-    name: Test UV / Maturin Build
+    name: Test Python ${{ matrix.python-version }} — uv + pip install
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.10", "3.12", "3.13"]
+
     steps:
       - uses: actions/checkout@v6
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin
+        run: pip install "maturin>=1.11,<2.0"
+
+      - name: Build and install via pip
+        run: pip install --no-build-isolation .
+
+      - name: Smoke-test installed binary
+        run: |
+          cat-llm --help
+          cat-llm extract --help
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
       - name: Test uv tool install
-        run: uv tool install .
+        run: uv tool install --reinstall .
+
+      - name: Smoke-test uv-installed binary
+        run: |
+          cat-llm --help
+          cat-llm extract --help
