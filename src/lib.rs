@@ -131,11 +131,11 @@ pub fn collect_files(args: &CatArgs) -> Vec<File> {
 /// Run the `cat` subcommand: walk, then render each `File` to the writer.
 pub fn run_cat<W: Write>(args: &CatArgs, writer: &mut W) -> std::io::Result<()> {
     for file in collect_files(args) {
-        writeln!(writer, "{}", file.path.display())?;
         if args.path_only {
-            continue;
+            writeln!(writer, "{}", file.path.display())?;
+        } else {
+            file.write_snapshot(writer)?;
         }
-        file.write_snapshot(writer)?;
     }
     Ok(())
 }
@@ -679,5 +679,29 @@ mod tests {
             "fn hello() {}\n"
         );
         assert_eq!(fs::read_to_string(out_base.join("empty.txt")).unwrap(), "");
+    }
+
+    #[test]
+    fn test_no_double_path() {
+        let dir = tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+
+        fs::write(base.join("main.rs"), "fn main() {}").unwrap();
+
+        let args = CatArgs {
+            paths: vec![base.clone()],
+            ..Default::default()
+        };
+
+        let mut output = Vec::new();
+        run_cat(&args, &mut output).unwrap();
+        let out = String::from_utf8(output).unwrap();
+
+        let path_str = base.join("main.rs").display().to_string();
+        let count = out.matches(&path_str).count();
+        assert_eq!(
+            count, 1,
+            "path should appear exactly once, got {count}:\n{out}"
+        );
     }
 }
